@@ -1,16 +1,58 @@
+import aiohttp
+import asyncio
+from typing import Dict, Optional, List
+from loguru import logger
+from ..models.image import ImageMetadata
+from .rate_limiter import RateLimiter
+from config.settings import settings
+
 class MapillaryClient:
     def __init__(self, api_key: str):
         self.api_key = api_key
-        self.rate_limiter = RateLimiter()
-        self.session = aiohttp.ClientSession()
+        self.rate_limiter = RateLimiter(settings.REQUESTS_PER_MINUTE)
+        self.session: Optional[aiohttp.ClientSession] = None
 
-    async def get_images(self, username: str, bbox: tuple):
+    async def __aenter__(self):
+        self.session = aiohttp.ClientSession()
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        if self.session:
+            await self.session.close()
+
+    async def get_images(self, username: str, bbox: tuple) -> List[ImageMetadata]:
+        if not self.session:
+            raise RuntimeError("Client not initialized. Use 'async with' context manager.")
+        
         await self.rate_limiter.wait_if_needed()
+        
         params = {
             'access_token': self.api_key,
-            'fields': 'id,geometry,thumb_1024_url',
+            'fields': 'id,geometry,thumb_1024_url,captured_at',
             'creator_username': username,
             'bbox': f'{bbox[0]},{bbox[1]},{bbox[2]},{bbox[3]}',
-            'limit': 2000
+            'limit': settings.BATCH_SIZE
         }
-        # Implementar paginación y manejo de errores
+
+        images = []
+        next_page = f"{settings.BASE_URL}/images"
+
+        while next_page:
+            try:
+                async with self.session.get(next_page, params=params) as response:
+                    if response.status != 200:
+                        logger.error(f"Error fetching images: {response.status}")
+                        break
+
+                    data = await response.json()
+                    for image_data in data.get('data', []):
+                        images.append(ImageMetadata(**image_data))
+
+                    next_page = data.get('paging', {}).get('next')
+                    params = {}  # Clear params as they're included in next_page URL
+
+            except Exception as e:
+                logger.error(f"Error during API request: {e}")
+                break
+
+        return images
