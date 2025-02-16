@@ -26,8 +26,11 @@ class MapillaryClient:
         
         await self.rate_limiter.wait_if_needed()
         
+        headers = {
+            'Authorization': f'OAuth {self.api_key}'
+        }
+        
         params = {
-            'access_token': self.api_key,
             'fields': 'id,geometry,thumb_1024_url,captured_at',
             'creator_username': username,
             'bbox': f'{bbox[0]},{bbox[1]},{bbox[2]},{bbox[3]}',
@@ -39,9 +42,20 @@ class MapillaryClient:
 
         while next_page:
             try:
-                async with self.session.get(next_page, params=params) as response:
+                async with self.session.get(next_page, params=params, headers=headers) as response:
                     if response.status != 200:
-                        logger.error(f"Error fetching images: {response.status}")
+                        error_message = await response.text()
+                        logger.error(f"Error fetching images: {response.status} - {error_message}")
+                        if response.status == 400:
+                            logger.error("Bad request. Please check the parameters and try again.")
+                        elif response.status == 401:
+                            logger.error("Unauthorized. Please check your API key.")
+                        elif response.status == 403:
+                            logger.error("Forbidden. You do not have permission to access this resource.")
+                        elif response.status == 404:
+                            logger.error("Not found. The requested resource could not be found.")
+                        elif response.status == 500:
+                            logger.error("Internal server error. Please try again later.")
                         break
 
                     data = await response.json()

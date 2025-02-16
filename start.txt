@@ -1,6 +1,13 @@
-
+# Crear el entorno virtual
 python -m venv venv
-venv\Scripts\activate.bat (para windows)
-pip install requirements.txt   pip install -r requirements.txt
-uvicorn main:app --reload
 
+# Activar el entorno virtual
+.\venv\Scripts\activate
+
+# Instalar dependencias desde requirements.txt
+pip install -r requirements.txt
+
+# Ejecutar el proyecto
+python main.py <username> --bbox <min_lon> <min_lat> <max_lon> <max_lat>
+
+python main.py itagui360 --bbox -75.635 6.150 -75.590 6.200
